@@ -7,6 +7,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <stdint.h>  // Fixed-width integer types like uint16_t, uint32_t
 
 // Constants
 #define BLOCK_SIZE 1024
@@ -160,16 +161,16 @@ void showsuper() {
 
     // Parse and display superblock information
     printf("Superblock information:\n");
-    printf("  Number of inodes:       %u\n", *(unsigned short *)(buffer + 0));
-    printf("  Number of zones:        %u\n", *(unsigned short *)(buffer + 2));
-    printf("  Number of imap_blocks:  %u\n", *(unsigned short *)(buffer + 4));
-    printf("  Number of zmap_blocks:  %u\n", *(unsigned short *)(buffer + 6));
-    printf("  First data zone:        %u\n", *(unsigned short *)(buffer + 8));
-    printf("  Log zone size:          %u\n", *(unsigned short *)(buffer + 10));
-    printf("  Max size:               %u\n", *(unsigned int *)(buffer + 12));
-    printf("  Magic:                  %u\n", *(unsigned short *)(buffer + 16));
-    printf("  State:                  %u\n", *(unsigned short *)(buffer + 18));
-    printf("  Zones:                  %u\n", *(unsigned short *)(buffer + 20));
+    printf("  Number of inodes:       %u\n", *(uint16_t *)(buffer + 0));
+    printf("  Number of zones:        %u\n", *(uint16_t *)(buffer + 2));
+    printf("  Number of imap_blocks:  %u\n", *(uint16_t *)(buffer + 4));
+    printf("  Number of zmap_blocks:  %u\n", *(uint16_t *)(buffer + 6));
+    printf("  First data zone:        %u\n", *(uint16_t *)(buffer + 8));
+    printf("  Log zone size:          %u\n", *(uint16_t *)(buffer + 10));
+    printf("  Max size:               %u\n", *(uint32_t *)(buffer + 12));
+    printf("  Magic:                  %u\n", *(uint16_t *)(buffer + 16));
+    printf("  State:                  %u\n", *(uint16_t *)(buffer + 18));
+    printf("  Zones:                  %u\n", *(uint16_t *)(buffer + 20));
 }
 
 void traverse(int long_list) {
@@ -192,91 +193,9 @@ void traverse(int long_list) {
 
             char permissions[11];
             parse_permissions(entry_inode.mode, permissions);
-            printf("%s %d %ld %s\n", permissions, entry_inode.uid, entry_inode.size, dir_entry.name);
+            printf("%s %hu %u %s\n", permissions, entry_inode.uid, entry_inode.size, dir_entry.name);
         } else {
             printf("%s\n", dir_entry.name);
         }
     }
-}
-
-void showzone(int zone_number) {
-    if (disk_fd == -1) {
-        printf("No disk is currently mounted.\n");
-        return;
-    }
-
-    unsigned char buffer[BLOCK_SIZE];
-    read_block(zone_number, buffer);
-
-    printf("Zone %d content:\n", zone_number);
-    for (int i = 0; i < BLOCK_SIZE; i++) {
-        if (i % 16 == 0) printf("\n%04x  ", i);
-        printf("%c ", isprint(buffer[i]) ? buffer[i] : '.');
-    }
-    printf("\n");
-}
-
-void showfile(const char *filename) {
-    if (disk_fd == -1) {
-        printf("No disk is currently mounted.\n");
-        return;
-    }
-
-    lseek(disk_fd, ROOT_DIR_START, SEEK_SET);
-    struct dir_entry dir_entry;
-
-    int found = 0;
-    while (read(disk_fd, &dir_entry, sizeof(dir_entry)) > 0) {
-        if (strcmp(dir_entry.name, filename) == 0) {
-            found = 1;
-            break;
-        }
-    }
-
-    if (!found) {
-        printf("File '%s' not found in the root directory.\n", filename);
-        return;
-    }
-
-    struct inode file_inode;
-    lseek(disk_fd, get_inode_offset(dir_entry.inode), SEEK_SET);
-    read(disk_fd, &file_inode, sizeof(file_inode));
-
-    char buffer[BLOCK_SIZE];
-    printf("Contents of file '%s':\n", filename);
-    for (int i = 0; i < file_inode.size / BLOCK_SIZE + 1; i++) {
-        if (file_inode.blocks[i] == 0) break;
-        read_block(file_inode.blocks[i], buffer);
-        printf("%.*s", BLOCK_SIZE, buffer);
-    }
-    printf("\n");
-}
-
-void read_block(int block_num, void *buffer) {
-    lseek(disk_fd, get_data_block_offset(block_num), SEEK_SET);
-    if (read(disk_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
-        perror("Failed to read block");
-    }
-}
-
-void parse_permissions(mode_t mode, char *perm) {
-    perm[0] = S_ISDIR(mode) ? 'd' : '-';
-    perm[1] = (mode & S_IRUSR) ? 'r' : '-';
-    perm[2] = (mode & S_IWUSR) ? 'w' : '-';
-    perm[3] = (mode & S_IXUSR) ? 'x' : '-';
-    perm[4] = (mode & S_IRGRP) ? 'r' : '-';
-    perm[5] = (mode & S_IWGRP) ? 'w' : '-';
-    perm[6] = (mode & S_IXGRP) ? 'x' : '-';
-    perm[7] = (mode & S_IROTH) ? 'r' : '-';
-    perm[8] = (mode & S_IWOTH) ? 'w' : '-';
-    perm[9] = (mode & S_IXOTH) ? 'x' : '-';
-    perm[10] = '\0';
-}
-
-off_t get_inode_offset(int inode_number) {
-    return INODE_TABLE_START + (inode_number - 1) * sizeof(struct inode);
-}
-
-off_t get_data_block_offset(int block_number) {
-    return DATA_BLOCK_START + block_number * BLOCK_SIZE;
 }
