@@ -199,3 +199,86 @@ void traverse(int long_list) {
         }
     }
 }
+void showzone(int zone_number) {
+    if (disk_fd == -1) {
+        printf("No disk is currently mounted.\n");
+        return;
+    }
+
+    unsigned char buffer[BLOCK_SIZE];
+    off_t offset = get_data_block_offset(zone_number);
+
+    lseek(disk_fd, offset, SEEK_SET);
+    if (read(disk_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
+        perror("Failed to read zone");
+        return;
+    }
+
+    printf("Contents of zone %d:\n", zone_number);
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        if (isprint(buffer[i])) {
+            printf("%c", buffer[i]);
+        } else {
+            printf(".");
+        }
+    }
+    printf("\n");
+}
+
+void showfile(const char *filename) {
+    if (disk_fd == -1) {
+        printf("No disk is currently mounted.\n");
+        return;
+    }
+
+    // Traverse root directory to find the file
+    lseek(disk_fd, ROOT_DIR_START, SEEK_SET);
+    struct dir_entry dir_entry;
+
+    while (read(disk_fd, &dir_entry, sizeof(dir_entry)) > 0) {
+        if (dir_entry.inode == 0) continue;
+
+        if (strcmp(dir_entry.name, filename) == 0) {
+            struct inode file_inode;
+            lseek(disk_fd, get_inode_offset(dir_entry.inode), SEEK_SET);
+            read(disk_fd, &file_inode, sizeof(file_inode));
+
+            printf("Contents of file '%s':\n", filename);
+            for (int i = 0; i < 10 && file_inode.blocks[i] != 0; i++) {
+                showzone(file_inode.blocks[i]);
+            }
+            return;
+        }
+    }
+
+    printf("File '%s' not found in root directory.\n", filename);
+}
+
+off_t get_inode_offset(int inode_number) {
+    return INODE_TABLE_START + (inode_number - 1) * sizeof(struct inode);
+}
+
+off_t get_data_block_offset(int block_number) {
+    return DATA_BLOCK_START + block_number * BLOCK_SIZE;
+}
+
+void parse_permissions(mode_t mode, char *perm) {
+    strcpy(perm, "----------");
+
+    if (S_ISDIR(mode)) perm[0] = 'd'; // Directory
+    if (S_ISCHR(mode)) perm[0] = 'c'; // Character device
+    if (S_ISBLK(mode)) perm[0] = 'b'; // Block device
+    if (S_ISLNK(mode)) perm[0] = 'l'; // Symlink
+
+    if (mode & S_IRUSR) perm[1] = 'r'; // Owner read
+    if (mode & S_IWUSR) perm[2] = 'w'; // Owner write
+    if (mode & S_IXUSR) perm[3] = 'x'; // Owner execute
+
+    if (mode & S_IRGRP) perm[4] = 'r'; // Group read
+    if (mode & S_IWGRP) perm[5] = 'w'; // Group write
+    if (mode & S_IXGRP) perm[6] = 'x'; // Group execute
+
+    if (mode & S_IROTH) perm[7] = 'r'; // Others read
+    if (mode & S_IWOTH) perm[8] = 'w'; // Others write
+    if (mode & S_IXOTH) perm[9] = 'x'; // Others execute
+}
