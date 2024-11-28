@@ -11,12 +11,29 @@
 // Constants
 #define BLOCK_SIZE 1024
 #define SUPERBLOCK_OFFSET 1024
-#define ROOT_DIR_START  /* Adjust to your filesystem structure */
-#define INODE_TABLE_START  /* Adjust as needed */
-#define DATA_BLOCK_START  /* Adjust as needed */
+#define ROOT_DIR_START 4096        // Adjust based on your Minix filesystem
+#define INODE_TABLE_START 8192     // Adjust based on your Minix filesystem
+#define DATA_BLOCK_START 16384     // Adjust based on your Minix filesystem
+#define MINIX_MAGIC 0x137F
 
 // Global variables
 int disk_fd = -1; // File descriptor for the mounted Minix disk
+
+// Structures
+struct inode {
+    mode_t mode;          // File mode
+    uint16_t uid;         // User ID
+    uint32_t size;        // File size
+    time_t atime;         // Last access time
+    time_t mtime;         // Last modification time
+    time_t ctime;         // Creation time
+    uint32_t blocks[10];  // Direct and indirect block pointers
+};
+
+struct dir_entry {
+    uint32_t inode;       // Inode number
+    char name[60];        // Name of the entry
+};
 
 // Function prototypes
 void print_help();
@@ -28,7 +45,10 @@ void showzone(int zone_number);
 void showfile(const char *filename);
 void read_block(int block_num, void *buffer);
 void parse_permissions(mode_t mode, char *perm);
+off_t get_inode_offset(int inode_number);
+off_t get_data_block_offset(int block_number);
 
+// Main function
 int main() {
     char command[256];
 
@@ -82,6 +102,8 @@ int main() {
     return 0;
 }
 
+// Function definitions
+
 void print_help() {
     printf("Supported commands:\n");
     printf("  help                - Show this help message.\n");
@@ -130,7 +152,13 @@ void showsuper() {
         return;
     }
 
-    // Parse superblock information
+    // Validate magic number
+    if (*(unsigned short *)(buffer + 16) != MINIX_MAGIC) {
+        printf("Invalid Minix file system (magic number mismatch).\n");
+        return;
+    }
+
+    // Parse and display superblock information
     printf("Superblock information:\n");
     printf("  Number of inodes:       %u\n", *(unsigned short *)(buffer + 0));
     printf("  Number of zones:        %u\n", *(unsigned short *)(buffer + 2));
@@ -150,19 +178,14 @@ void traverse(int long_list) {
         return;
     }
 
-    // Root directory reading logic
-    lseek(disk_fd, ROOT_DIR_START, SEEK_SET); // Adjust ROOT_DIR_START based on your filesystem
-    struct dir_entry {
-        uint32_t inode; // Inode number
-        char name[60];  // Name of the entry
-    } dir_entry;
+    lseek(disk_fd, ROOT_DIR_START, SEEK_SET);
+    struct dir_entry dir_entry;
 
     printf("Directory Contents:\n");
     while (read(disk_fd, &dir_entry, sizeof(dir_entry)) > 0) {
         if (dir_entry.inode == 0) continue; // Skip unused entries
 
         if (long_list) {
-            // Fetch inode details for long listing
             struct inode entry_inode;
             lseek(disk_fd, get_inode_offset(dir_entry.inode), SEEK_SET);
             read(disk_fd, &entry_inode, sizeof(entry_inode));
@@ -199,12 +222,8 @@ void showfile(const char *filename) {
         return;
     }
 
-    // Locate the file in the root directory
     lseek(disk_fd, ROOT_DIR_START, SEEK_SET);
-    struct dir_entry {
-        uint32_t inode; // Inode number
-        char name[60];  // Name of the entry
-    } dir_entry;
+    struct dir_entry dir_entry;
 
     int found = 0;
     while (read(disk_fd, &dir_entry, sizeof(dir_entry)) > 0) {
@@ -219,34 +238,29 @@ void showfile(const char *filename) {
         return;
     }
 
-    // Fetch file's inode
     struct inode file_inode;
     lseek(disk_fd, get_inode_offset(dir_entry.inode), SEEK_SET);
     read(disk_fd, &file_inode, sizeof(file_inode));
 
-    // Read file content
     char buffer[BLOCK_SIZE];
     printf("Contents of file '%s':\n", filename);
     for (int i = 0; i < file_inode.size / BLOCK_SIZE + 1; i++) {
-        lseek(disk_fd, get_data_block_offset(file_inode.blocks[i]), SEEK_SET);
-        read(disk_fd, buffer, BLOCK_SIZE);
-        for (int j = 0; j < BLOCK_SIZE && (i * BLOCK_SIZE + j) < file_inode.size; j++) {
-            putchar(buffer[j]); // Print character to console
-        }
+        if (file_inode.blocks[i] == 0) break;
+        read_block(file_inode.blocks[i], buffer);
+        printf("%.*s", BLOCK_SIZE, buffer);
     }
     printf("\n");
 }
 
 void read_block(int block_num, void *buffer) {
-    off_t offset = block_num * BLOCK_SIZE;
-    lseek(disk_fd, offset, SEEK_SET);
+    lseek(disk_fd, get_data_block_offset(block_num), SEEK_SET);
     if (read(disk_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
         perror("Failed to read block");
     }
 }
 
 void parse_permissions(mode_t mode, char *perm) {
-    perm[0] = (mode & S_IFDIR) ? 'd' : '-';
+    perm[0] = S_ISDIR(mode) ? 'd' : '-';
     perm[1] = (mode & S_IRUSR) ? 'r' : '-';
     perm[2] = (mode & S_IWUSR) ? 'w' : '-';
     perm[3] = (mode & S_IXUSR) ? 'x' : '-';
@@ -258,10 +272,11 @@ void parse_permissions(mode_t mode, char *perm) {
     perm[9] = (mode & S_IXOTH) ? 'x' : '-';
     perm[10] = '\0';
 }
+
 off_t get_inode_offset(int inode_number) {
-    return INODE_TABLE_START + (inode_number - 1) * sizeof(struct inode); // Adjust INODE_TABLE_START
+    return INODE_TABLE_START + (inode_number - 1) * sizeof(struct inode);
 }
 
 off_t get_data_block_offset(int block_number) {
-    return DATA_BLOCK_START + block_number * BLOCK_SIZE; // Adjust DATA_BLOCK_START
+    return DATA_BLOCK_START + block_number * BLOCK_SIZE;
 }
