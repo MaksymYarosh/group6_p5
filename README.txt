@@ -17,6 +17,6 @@ There are several possibilities for why this function is not working:
 -improper i-node table offset
 -incorrect mode for the root i-node
 -incorrect reading of the superblock
-at this time, the possibility of a corrupted image is also equally likely.
+at this time, the possibility of a corrupted image has not been ruled out.
 
 ***: difficulties with the traverse function did not permit time to implement the bonus showfile function.
