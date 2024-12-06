@@ -1,22 +1,21 @@
-# group6_p5
-# CIS345_Project5
+This project, titled Minix Disk Program, was developed as part of the CIS345 course, and it aims to provide functionality for interacting with a Minix disk image in C. The program allows users to perform a variety of essential operations on a Minix file system, such as mounting and unmounting a disk image, displaying the superblock details, traversing the root directory, reading zone content, and showing the contents of files within the disk image. These operations are carried out using low-level system calls, including open(), read(), and lseek(), which directly interact with the disk image and allow for manual access to the underlying file system structures.
 
-Maksym Yarosh 2881321 - 50%
-Joseph Spitznagel 2863192 - 50%
+The project is a collaborative effort, with 
 
-This project implements a Minix Disk Program in C. It provides functionality to interact with a Minix disk image, allowing users to perform operations such as mounting, unmounting, displaying superblock details, traversing the root directory, reading zone content, and showing file contents. The program uses low-level system calls (open(), read(), lseek(), etc.) to access the disk image directly.
+Maksym Yarosh (ID: 2881321) - 50% 
+Joseph Spitznagel (ID: 2863192) - 50%, 
 
-A makefile has been included for the project.
+For ease of use, a makefile is provided, allowing users to simply type make in the terminal to compile the program, resulting in the executable file minix_disk_program.
 
-just type "make" to create the file "minix_disk_program"
+Included in the project submission is the disk image file imagefile.img. Users are expected to specify this file in the [file] field of the minimount function to load the Minix file system for further operations.
 
-*: the file "imagefile.img" is included in this submission. Use this file in the [file] field of minimount.
+However, it is important to note that, as of the time of submission, the traverse function does not work properly. There are several potential reasons for this issue, including but not limited to:
 
-**: at the time of submission, the traverse function does not work properly.
-There are several possibilities for why this function is not working:
--improper i-node table offset
--incorrect mode for the root i-node
--incorrect reading of the superblock
-at this time, the possibility of a corrupted image has not been ruled out.
+An improper i-node table offset
+An incorrect mode for the root i-node
+Issues with reading the superblock correctly
+While the possibility of a corrupted disk image has been considered, it has not been definitively ruled out. As a result of these difficulties, time constraints prevented the implementation of the bonus showfile function, which would have allowed users to view the contents of individual files.
 
-***: difficulties with the traverse function did not permit time to implement the bonus showfile function.
+In summary, the Minix Disk Program provides a fundamental set of tools for interacting with a Minix file system, though there are some issues with certain functions that are still being addressed. Future development will aim to resolve these issues and further enhance the program's functionality.
+
+This version clarifies the project’s goals and the current status of specific features while maintaining the original information. It explains the functionality of the program, addresses known issues, and presents the project in a more comprehensive way.
