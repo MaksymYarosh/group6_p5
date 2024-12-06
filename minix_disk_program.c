@@ -56,6 +56,7 @@ void quit();
 void handle_command(char *command);
 void print_permissions(unsigned short mode);
 
+//main function
 int main() {
     char command[256];
 
@@ -72,6 +73,7 @@ int main() {
     return 0;
 }
 
+//help function
 void print_help() {
     printf("Available commands:\n");
     printf("  help                  Show this help message\n");
@@ -83,6 +85,7 @@ void print_help() {
     printf("  quit                  Exit the Minix console\n");
 }
 
+//mount disk function
 void minimount(char *filename) {
     if (minix_fd != -1) {
         printf("A Minix disk is already mounted. Please unmount it first.\n");
@@ -98,6 +101,7 @@ void minimount(char *filename) {
     printf("Minix disk image '%s' mounted successfully.\n", filename);
 }
 
+//unmount disk function
 void miniumount() {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -109,6 +113,7 @@ void miniumount() {
     printf("Minix disk unmounted successfully.\n");
 }
 
+//show super block function
 void showsuper() {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -135,6 +140,7 @@ void showsuper() {
     printf("  Zones:                  %lu\n", sb.zones);
 }
 
+//traverse -l permissions function
 void print_permissions(unsigned short mode) {
     char permissions[11] = {0};
 
@@ -159,6 +165,7 @@ void print_permissions(unsigned short mode) {
     printf("%s ", permissions);
 }
 
+//traverse function
 void traverse(int long_list) {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -227,6 +234,7 @@ void traverse(int long_list) {
     }
 }
 
+//show zone function
 void showzone(int zone_number) {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -250,6 +258,7 @@ void showzone(int zone_number) {
     }
 }
 
+//quit/exit function
 void quit() {
     if (minix_fd != -1) {
         close(minix_fd);
