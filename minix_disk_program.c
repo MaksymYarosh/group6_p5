@@ -1,201 +1,292 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
 #include <unistd.h>
-#include <ctype.h>
-#include <time.h>
-#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <ctype.h>
 
-// Constants
 #define BLOCK_SIZE 1024
-#define SUPERBLOCK_OFFSET 1024
+#define MAX_FILENAME 60
 
 // Global variables
-int disk_fd = -1; // File descriptor for the mounted Minix disk
+int minix_fd = -1; // File descriptor for the mounted Minix disk image
+
+// Superblock structure
+struct superblock {
+    unsigned short n_inodes;
+    unsigned short n_zones;
+    unsigned short imap_blocks;
+    unsigned short zmap_blocks;
+    unsigned short first_data_zone;
+    unsigned short log_zone_size;
+    unsigned long max_size;
+    unsigned short magic;
+    unsigned short state;
+    unsigned long zones;
+};
+
+// Inode structure
+struct inode {
+    unsigned short mode;
+    unsigned short uid;
+    unsigned long size;
+    unsigned long atime;
+    unsigned long mtime;
+    unsigned long ctime;
+    unsigned short zone[9];
+};
+
+// Directory entry structure
+struct dir_entry {
+    unsigned int inode;
+    char name[MAX_FILENAME];
+};
 
 // Function prototypes
 void print_help();
-void minimount(const char *filename);
+void minimount(char *filename);
 void miniumount();
 void showsuper();
 void traverse(int long_list);
 void showzone(int zone_number);
-void showfile(const char *filename);
-void read_block(int block_num, void *buffer);
-void parse_permissions(mode_t mode, char *perm);
+void quit();
+void handle_command(char *command);
+void print_permissions(unsigned short mode);
 
 int main() {
     char command[256];
 
-    printf("Minix Disk Program\n");
-    printf("Type 'help' for a list of commands.\n");
-
+    printf("Minix Disk Console. Type 'help' for available commands.\n");
     while (1) {
-        printf("minix> ");
-        if (!fgets(command, sizeof(command), stdin)) {
-            perror("fgets failed");
+        printf("minix: ");
+        if (fgets(command, sizeof(command), stdin) == NULL) {
             break;
         }
-
-        // Remove trailing newline
-        command[strcspn(command, "\n")] = 0;
-
-        // Parse command
-        char *cmd = strtok(command, " ");
-        if (!cmd) continue;
-
-        if (strcmp(cmd, "help") == 0) {
-            print_help();
-        } else if (strcmp(cmd, "minimount") == 0) {
-            char *filename = strtok(NULL, " ");
-            if (filename) minimount(filename);
-            else printf("Usage: minimount [image file]\n");
-        } else if (strcmp(cmd, "miniumount") == 0) {
-            miniumount();
-        } else if (strcmp(cmd, "showsuper") == 0) {
-            showsuper();
-        } else if (strcmp(cmd, "traverse") == 0) {
-            char *flag = strtok(NULL, " ");
-            traverse(flag && strcmp(flag, "-l") == 0);
-        } else if (strcmp(cmd, "showzone") == 0) {
-            char *zone = strtok(NULL, " ");
-            if (zone) showzone(atoi(zone));
-            else printf("Usage: showzone [zone number]\n");
-        } else if (strcmp(cmd, "showfile") == 0) {
-            char *filename = strtok(NULL, " ");
-            if (filename) showfile(filename);
-            else printf("Usage: showfile [filename]\n");
-        } else if (strcmp(cmd, "quit") == 0) {
-            miniumount();
-            printf("Exiting Minix console.\n");
-            break;
-        } else {
-            printf("Unknown command. Type 'help' for a list of commands.\n");
-        }
+        command[strcspn(command, "\n")] = 0; // Remove trailing newline
+        handle_command(command);
     }
 
     return 0;
 }
 
 void print_help() {
-    printf("Supported commands:\n");
-    printf("  help                - Show this help message.\n");
-    printf("  minimount [file]    - Mount a Minix disk image.\n");
-    printf("  miniumount          - Unmount the Minix disk.\n");
-    printf("  showsuper           - Display superblock information.\n");
-    printf("  traverse [-l]       - List contents of the root directory.\n");
-    printf("  showzone [zone]     - Display ASCII content of a specified zone.\n");
-    printf("  showfile [file]     - Display the content of a file in the root directory.\n");
-    printf("  quit                - Exit the console.\n");
+    printf("Available commands:\n");
+    printf("  help                  Show this help message\n");
+    printf("  minimount [file]      Mount a Minix disk image\n");
+    printf("  miniumount            Unmount the Minix disk image\n");
+    printf("  showsuper             Show superblock information\n");
+    printf("  traverse [-l]         List root directory contents\n");
+    printf("  showzone [number]     Show the content of a zone\n");
+    printf("  quit                  Exit the Minix console\n");
 }
 
-void minimount(const char *filename) {
-    if (disk_fd != -1) {
-        printf("A disk is already mounted. Please unmount it first.\n");
+void minimount(char *filename) {
+    if (minix_fd != -1) {
+        printf("A Minix disk is already mounted. Please unmount it first.\n");
         return;
     }
-    disk_fd = open(filename, O_RDONLY);
-    if (disk_fd == -1) {
-        perror("Failed to open disk image");
-    } else {
-        printf("Disk image '%s' mounted successfully.\n", filename);
+
+    minix_fd = open(filename, O_RDONLY);
+    if (minix_fd == -1) {
+        perror("Error opening file");
+        return;
     }
+
+    printf("Minix disk image '%s' mounted successfully.\n", filename);
 }
 
 void miniumount() {
-    if (disk_fd != -1) {
-        close(disk_fd);
-        disk_fd = -1;
-        printf("Disk unmounted successfully.\n");
-    } else {
-        printf("No disk is currently mounted.\n");
+    if (minix_fd == -1) {
+        printf("No Minix disk is currently mounted.\n");
+        return;
     }
+
+    close(minix_fd);
+    minix_fd = -1;
+    printf("Minix disk unmounted successfully.\n");
 }
 
 void showsuper() {
-    if (disk_fd == -1) {
-        printf("No disk is currently mounted.\n");
+    if (minix_fd == -1) {
+        printf("No Minix disk is currently mounted.\n");
         return;
     }
 
-    unsigned char buffer[BLOCK_SIZE];
-    lseek(disk_fd, SUPERBLOCK_OFFSET, SEEK_SET);
-    if (read(disk_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
-        perror("Failed to read superblock");
+    struct superblock sb;
+    lseek(minix_fd, BLOCK_SIZE, SEEK_SET); // Superblock starts at block 1
+    if (read(minix_fd, &sb, sizeof(sb)) != sizeof(sb)) {
+        perror("Error reading superblock");
         return;
     }
 
-    // Parse superblock information
-    printf("Superblock information:\n");
-    printf("  Number of inodes:       %u\n", *(unsigned short *)(buffer + 0));
-    printf("  Number of zones:        %u\n", *(unsigned short *)(buffer + 2));
-    printf("  Number of imap_blocks:  %u\n", *(unsigned short *)(buffer + 4));
-    printf("  Number of zmap_blocks:  %u\n", *(unsigned short *)(buffer + 6));
-    printf("  First data zone:        %u\n", *(unsigned short *)(buffer + 8));
-    printf("  Log zone size:          %u\n", *(unsigned short *)(buffer + 10));
-    printf("  Max size:               %u\n", *(unsigned int *)(buffer + 12));
-    printf("  Magic:                  %u\n", *(unsigned short *)(buffer + 16));
-    printf("  State:                  %u\n", *(unsigned short *)(buffer + 18));
-    printf("  Zones:                  %u\n", *(unsigned short *)(buffer + 20));
+    printf("Superblock Information:\n");
+    printf("  Number of inodes:       %u\n", sb.n_inodes);
+    printf("  Number of zones:        %u\n", sb.n_zones);
+    printf("  Number of imap blocks:  %u\n", sb.imap_blocks);
+    printf("  Number of zmap blocks:  %u\n", sb.zmap_blocks);
+    printf("  First data zone:        %u\n", sb.first_data_zone);
+    printf("  Log zone size:          %u\n", sb.log_zone_size);
+    printf("  Max size:               %lu\n", sb.max_size);
+    printf("  Magic:                  %u\n", sb.magic);
+    printf("  State:                  %u\n", sb.state);
+    printf("  Zones:                  %lu\n", sb.zones);
+}
+
+void print_permissions(unsigned short mode) {
+    char permissions[11] = {0};
+
+    // File type
+    permissions[0] = (mode & 0x4000) ? 'd' : '-'; // Directory or file
+
+    // Owner permissions
+    permissions[1] = (mode & 0x0100) ? 'r' : '-';
+    permissions[2] = (mode & 0x0080) ? 'w' : '-';
+    permissions[3] = (mode & 0x0040) ? 'x' : '-';
+
+    // Group permissions
+    permissions[4] = (mode & 0x0020) ? 'r' : '-';
+    permissions[5] = (mode & 0x0010) ? 'w' : '-';
+    permissions[6] = (mode & 0x0008) ? 'x' : '-';
+
+    // Other permissions
+    permissions[7] = (mode & 0x0004) ? 'r' : '-';
+    permissions[8] = (mode & 0x0002) ? 'w' : '-';
+    permissions[9] = (mode & 0x0001) ? 'x' : '-';
+
+    printf("%s ", permissions);
 }
 
 void traverse(int long_list) {
-    if (disk_fd == -1) {
-        printf("No disk is currently mounted.\n");
+    if (minix_fd == -1) {
+        printf("No Minix disk is currently mounted.\n");
         return;
     }
 
-    // Implementation omitted due to complexity.
-    printf("Traverse functionality not fully implemented yet.\n");
+    struct superblock sb;
+    lseek(minix_fd, BLOCK_SIZE, SEEK_SET); // Read the superblock
+    if (read(minix_fd, &sb, sizeof(sb)) != sizeof(sb)) {
+        perror("Error reading superblock");
+        return;
+    }
+
+    // Inodes start immediately after the imap and zmap blocks
+    off_t inode_table_offset = (2 + sb.imap_blocks + sb.zmap_blocks) * BLOCK_SIZE;
+
+    // Read the root inode (typically inode #1)
+    struct inode root_inode;
+    lseek(minix_fd, inode_table_offset + sizeof(root_inode), SEEK_SET); // Skip inode 0
+    if (read(minix_fd, &root_inode, sizeof(root_inode)) != sizeof(root_inode)) {
+        perror("Error reading root inode");
+        return;
+    }
+
+    // Check if the inode represents a directory
+    if ((root_inode.mode & 0xF000) != 0x4000) {
+        printf("Root inode is not a directory.\n");
+        return;
+    }
+
+    // Read the first zone of the root directory
+    char buffer[BLOCK_SIZE];
+    lseek(minix_fd, root_inode.zone[0] * BLOCK_SIZE, SEEK_SET);
+    if (read(minix_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
+        perror("Error reading root directory zone");
+        return;
+    }
+
+    // Parse directory entries
+    for (int offset = 0; offset < BLOCK_SIZE; offset += sizeof(struct dir_entry)) {
+        struct dir_entry *entry = (struct dir_entry *)(buffer + offset);
+
+        if (entry->inode == 0) continue; // Skip empty entries
+
+        if (long_list) {
+            // Read the inode for more details
+            struct inode file_inode;
+            lseek(minix_fd, inode_table_offset + (entry->inode - 1) * sizeof(file_inode), SEEK_SET);
+            if (read(minix_fd, &file_inode, sizeof(file_inode)) != sizeof(file_inode)) {
+                perror("Error reading file inode");
+                return;
+            }
+
+            // Print file type, permissions, size, and modification time
+            print_permissions(file_inode.mode);
+            printf("%u ", file_inode.uid);
+            printf("%lu ", file_inode.size);
+
+            char time_str[20];
+            struct tm *timeinfo = localtime((time_t *)&file_inode.mtime);
+            strftime(time_str, sizeof(time_str), "%b %d %Y", timeinfo);
+            printf("%s ", time_str);
+        }
+
+        printf("%s\n", entry->name);
+    }
 }
 
 void showzone(int zone_number) {
-    if (disk_fd == -1) {
-        printf("No disk is currently mounted.\n");
+    if (minix_fd == -1) {
+        printf("No Minix disk is currently mounted.\n");
         return;
     }
 
-    unsigned char buffer[BLOCK_SIZE];
-    read_block(zone_number, buffer);
+    char buffer[BLOCK_SIZE];
+    lseek(minix_fd, zone_number * BLOCK_SIZE, SEEK_SET);
+    if (read(minix_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
+        perror("Error reading zone");
+        return;
+    }
 
     printf("Zone %d content:\n", zone_number);
-    for (int i = 0; i < BLOCK_SIZE; i++) {
-        if (i % 16 == 0) printf("\n%04x  ", i);
-        printf("%c ", isprint(buffer[i]) ? buffer[i] : '.');
-    }
-    printf("\n");
-}
-
-void showfile(const char *filename) {
-    if (disk_fd == -1) {
-        printf("No disk is currently mounted.\n");
-        return;
-    }
-
-    // Implementation omitted due to complexity.
-    printf("Showfile functionality not fully implemented yet.\n");
-}
-
-void read_block(int block_num, void *buffer) {
-    off_t offset = block_num * BLOCK_SIZE;
-    lseek(disk_fd, offset, SEEK_SET);
-    if (read(disk_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
-        perror("Failed to read block");
+    for (int i = 0; i < BLOCK_SIZE; i += 16) {
+        printf("%08x  ", i);
+        for (int j = 0; j < 16; j++) {
+            printf("%c ", isprint(buffer[i + j]) ? buffer[i + j] : '.');
+        }
+        printf("\n");
     }
 }
 
-void parse_permissions(mode_t mode, char *perm) {
-    perm[0] = (mode & S_IFDIR) ? 'd' : '-';
-    perm[1] = (mode & S_IRUSR) ? 'r' : '-';
-    perm[2] = (mode & S_IWUSR) ? 'w' : '-';
-    perm[3] = (mode & S_IXUSR) ? 'x' : '-';
-    perm[4] = (mode & S_IRGRP) ? 'r' : '-';
-    perm[5] = (mode & S_IWGRP) ? 'w' : '-';
-    perm[6] = (mode & S_IXGRP) ? 'x' : '-';
-    perm[7] = (mode & S_IROTH) ? 'r' : '-';
-    perm[8] = (mode & S_IWOTH) ? 'w' : '-';
-    perm[9] = (mode & S_IXOTH) ? 'x' : '-';
-    perm[10] = '\0';
+void quit() {
+    if (minix_fd != -1) {
+        close(minix_fd);
+    }
+    printf("Exiting Minix console.\n");
+    exit(0);
+}
+
+void handle_command(char *command) {
+    char *args = strchr(command, ' ');
+    if (args) {
+        *args++ = '\0'; // Split the command and arguments
+    }
+
+    if (strcmp(command, "help") == 0) {
+        print_help();
+    } else if (strcmp(command, "minimount") == 0) {
+        if (!args) {
+            printf("Usage: minimount [file]\n");
+        } else {
+            minimount(args);
+        }
+    } else if (strcmp(command, "miniumount") == 0) {
+        miniumount();
+    } else if (strcmp(command, "showsuper") == 0) {
+        showsuper();
+    } else if (strcmp(command, "traverse") == 0) {
+        traverse(args && strcmp(args, "-l") == 0);
+    } else if (strcmp(command, "showzone") == 0) {
+        if (!args) {
+            printf("Usage: showzone [number]\n");
+        } else {
+            showzone(atoi(args));
+        }
+    } else if (strcmp(command, "quit") == 0) {
+        quit();
+    } else {
+        printf("Unknown command: %s\n", command);
+    }
 }
