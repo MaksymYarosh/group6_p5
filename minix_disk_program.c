@@ -80,8 +80,10 @@ void print_help() {
     printf("  showsuper             Show superblock information\n");
     printf("  traverse [-l]         List root directory contents\n");
     printf("  showzone [number]     Show the content of a zone\n");
+    printf("  showfile [filename]   Show the content of a file in the root directory (Bonus)\n");
     printf("  quit                  Exit the Minix console\n");
 }
+
 
 void minimount(char *filename) {
     if (minix_fd != -1) {
@@ -109,31 +111,34 @@ void miniumount() {
     printf("Minix disk unmounted successfully.\n");
 }
 
-void showsuper() {
-    if (minix_fd == -1) {
+void show_super() {
+    if (minix_fd == -1) {  // Check if the Minix disk is mounted
         printf("No Minix disk is currently mounted.\n");
         return;
     }
 
-    struct superblock sb;
-    lseek(minix_fd, BLOCK_SIZE, SEEK_SET); // Superblock starts at block 1
-    if (read(minix_fd, &sb, sizeof(sb)) != sizeof(sb)) {
-        perror("Error reading superblock");
+    unsigned char buffer[BLOCK_SIZE];  // Buffer to hold the superblock data
+
+    // Move the file pointer to the superblock (it is typically at block 1 in Minix)
+    if (lseek(minix_fd, BLOCK_SIZE, SEEK_SET) == -1 || read(minix_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
+        perror("Failed to read superblock");
         return;
     }
 
+    // Print out the superblock information from the buffer
     printf("Superblock Information:\n");
-    printf("  Number of inodes:       %u\n", sb.n_inodes);
-    printf("  Number of zones:        %u\n", sb.n_zones);
-    printf("  Number of imap blocks:  %u\n", sb.imap_blocks);
-    printf("  Number of zmap blocks:  %u\n", sb.zmap_blocks);
-    printf("  First data zone:        %u\n", sb.first_data_zone);
-    printf("  Log zone size:          %u\n", sb.log_zone_size);
-    printf("  Max size:               %lu\n", sb.max_size);
-    printf("  Magic:                  %u\n", sb.magic);
-    printf("  State:                  %u\n", sb.state);
-    printf("  Zones:                  %lu\n", sb.zones);
+    printf("  Number of inodes:       %u\n", *(unsigned short *)(buffer + 0));        // n_inodes
+    printf("  Number of zones:        %u\n", *(unsigned short *)(buffer + 2));        // n_zones
+    printf("  Number of imap blocks:  %u\n", *(unsigned short *)(buffer + 4));        // imap_blocks
+    printf("  Number of zmap blocks:  %u\n", *(unsigned short *)(buffer + 6));        // zmap_blocks
+    printf("  First data zone:        %u\n", *(unsigned short *)(buffer + 8));        // first_data_zone
+    printf("  Log zone size:          %u\n", *(unsigned short *)(buffer + 10));       // log_zone_size
+    printf("  Max size:               %lu\n", *(unsigned long *)(buffer + 12));      // max_size
+    printf("  Magic:                  %x\n", *(unsigned short *)(buffer + 16));       // magic
+    printf("  State:                  %u\n", *(unsigned short *)(buffer + 18));       // state
+    printf("  Zones:                  %lu\n", *(unsigned long *)(buffer + 20));       // zones
 }
+
 
 void print_permissions(unsigned short mode) {
     char permissions[11] = {0};
@@ -249,6 +254,90 @@ void showzone(int zone_number) {
         printf("\n");
     }
 }
+void showfile(char *filename) {
+    if (minix_fd == -1) {
+        printf("No Minix disk is currently mounted.\n");
+        return;
+    }
+
+    struct superblock sb;
+    lseek(minix_fd, BLOCK_SIZE, SEEK_SET); // Read the superblock
+    if (read(minix_fd, &sb, sizeof(sb)) != sizeof(sb)) {
+        perror("Error reading superblock");
+        return;
+    }
+
+    // Inodes start immediately after the imap and zmap blocks
+    off_t inode_table_offset = (2 + sb.imap_blocks + sb.zmap_blocks) * BLOCK_SIZE;
+
+    // Read the root inode (typically inode #1)
+    struct inode root_inode;
+    lseek(minix_fd, inode_table_offset + sizeof(root_inode), SEEK_SET); // Skip inode 0
+    if (read(minix_fd, &root_inode, sizeof(root_inode)) != sizeof(root_inode)) {
+        perror("Error reading root inode");
+        return;
+    }
+
+    // Check if the inode represents a directory
+    if ((root_inode.mode & 0xF000) != 0x4000) {
+        printf("Root inode is not a directory.\n");
+        return;
+    }
+
+    // Read the first zone of the root directory
+    char buffer[BLOCK_SIZE];
+    lseek(minix_fd, root_inode.zone[0] * BLOCK_SIZE, SEEK_SET);
+    if (read(minix_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
+        perror("Error reading root directory zone");
+        return;
+    }
+
+    // Parse directory entries to find the target file
+    for (int offset = 0; offset < BLOCK_SIZE; offset += sizeof(struct dir_entry)) {
+        struct dir_entry *entry = (struct dir_entry *)(buffer + offset);
+
+        if (entry->inode == 0) continue; // Skip empty entries
+
+        if (strcmp(entry->name, filename) == 0) {
+            // File found, now read its inode
+            struct inode file_inode;
+            lseek(minix_fd, inode_table_offset + (entry->inode - 1) * sizeof(file_inode), SEEK_SET);
+            if (read(minix_fd, &file_inode, sizeof(file_inode)) != sizeof(file_inode)) {
+                perror("Error reading file inode");
+                return;
+            }
+
+            // Check that the inode corresponds to a regular file
+            if ((file_inode.mode & 0xF000) != 0x8000) {
+                printf("%s is not a regular file.\n", filename);
+                return;
+            }
+
+            // Now read the file data based on its zones
+            printf("File contents of '%s':\n", filename);
+            for (int i = 0; i < 9; i++) {
+                if (file_inode.zone[i] == 0) break;  // No more zones
+                lseek(minix_fd, file_inode.zone[i] * BLOCK_SIZE, SEEK_SET);
+                if (read(minix_fd, buffer, BLOCK_SIZE) != BLOCK_SIZE) {
+                    perror("Error reading file zone");
+                    return;
+                }
+                // Print file content in hexadecimal format
+                for (int j = 0; j < BLOCK_SIZE; j++) {
+                    printf("%02x ", buffer[j]);
+                    if ((j + 1) % 16 == 0) {
+                        printf("\n");
+                    }
+                }
+                printf("\n");
+            }
+            return;
+        }
+    }
+
+    // File not found
+    printf("File '%s' not found in root directory.\n", filename);
+}
 
 void quit() {
     if (minix_fd != -1) {
@@ -275,7 +364,7 @@ void handle_command(char *command) {
     } else if (strcmp(command, "miniumount") == 0) {
         miniumount();
     } else if (strcmp(command, "showsuper") == 0) {
-        showsuper();
+        show_super();
     } else if (strcmp(command, "traverse") == 0) {
         traverse(args && strcmp(args, "-l") == 0);
     } else if (strcmp(command, "showzone") == 0) {
@@ -283,6 +372,12 @@ void handle_command(char *command) {
             printf("Usage: showzone [number]\n");
         } else {
             showzone(atoi(args));
+        }
+    } else if (strcmp(command, "showfile") == 0) {
+        if (!args) {
+            printf("Usage: showfile [filename]\n");
+        } else {
+            showfile(args);
         }
     } else if (strcmp(command, "quit") == 0) {
         quit();
