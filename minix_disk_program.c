@@ -56,6 +56,7 @@ void quit();
 void handle_command(char *command);
 void print_permissions(unsigned short mode);
 
+//main function
 int main() {
     char command[256];
 
@@ -72,6 +73,7 @@ int main() {
     return 0;
 }
 
+//help function
 void print_help() {
     printf("Available commands:\n");
     printf("  help                  Show this help message\n");
@@ -84,7 +86,7 @@ void print_help() {
     printf("  quit                  Exit the Minix console\n");
 }
 
-
+//mount function
 void minimount(char *filename) {
     if (minix_fd != -1) {
         printf("A Minix disk is already mounted. Please unmount it first.\n");
@@ -100,6 +102,7 @@ void minimount(char *filename) {
     printf("Minix disk image '%s' mounted successfully.\n", filename);
 }
 
+//unmount function
 void miniumount() {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -111,6 +114,7 @@ void miniumount() {
     printf("Minix disk unmounted successfully.\n");
 }
 
+//show superblock function
 void show_super() {
     if (minix_fd == -1) {  // Check if the Minix disk is mounted
         printf("No Minix disk is currently mounted.\n");
@@ -139,7 +143,7 @@ void show_super() {
     printf("  Zones:                  %lu\n", *(unsigned long *)(buffer + 20));       // zones
 }
 
-
+//traverse -l permissions sub-function
 void print_permissions(unsigned short mode) {
     char permissions[11] = {0};
 
@@ -164,6 +168,7 @@ void print_permissions(unsigned short mode) {
     printf("%s ", permissions);
 }
 
+//traverse function
 void traverse(int long_list) {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -217,9 +222,10 @@ void traverse(int long_list) {
                 return;
             }
 
-            // Print file type, permissions, size, and modification time
+            // Print file type, permissions, user and group id's, size, modification time, and file name
             print_permissions(file_inode.mode);
             printf("%u ", file_inode.uid);
+            printf("%u ", file_inode.gid);
             printf("%lu ", file_inode.size);
 
             char time_str[20];
@@ -232,6 +238,7 @@ void traverse(int long_list) {
     }
 }
 
+//showzone function
 void showzone(int zone_number) {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -254,6 +261,8 @@ void showzone(int zone_number) {
         printf("\n");
     }
 }
+
+//showfile function
 void showfile(char *filename) {
     if (minix_fd == -1) {
         printf("No Minix disk is currently mounted.\n");
@@ -339,6 +348,7 @@ void showfile(char *filename) {
     printf("File '%s' not found in root directory.\n", filename);
 }
 
+//quit/exit function
 void quit() {
     if (minix_fd != -1) {
         close(minix_fd);
@@ -347,6 +357,7 @@ void quit() {
     exit(0);
 }
 
+//main command handler sub-function
 void handle_command(char *command) {
     char *args = strchr(command, ' ');
     if (args) {
